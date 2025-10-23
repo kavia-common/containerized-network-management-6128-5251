@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: cnm-mongo
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_DATABASE=devicesdb
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "mongodb://localhost:27017/devicesdb", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - appnet
+
+  backend:
+    build:
+      context: ../containerized-network-management-6128-5252/BackendApplication
+    container_name: cnm-backend
+    env_file:
+      - ../containerized-network-management-6128-5252/BackendApplication/.env.example
+    environment:
+      - FLASK_ENV=production
+      - API_PREFIX=/api/v1
+      - MONGODB_URI=mongodb://mongo:27017
+      - MONGODB_DB=devicesdb
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=3001
+      - LOG_LEVEL=INFO
+    depends_on:
+      mongo:
+        condition: service_started
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - appnet
+
+  frontend:
+    build:
+      context: ./FrontendApplication
+      args:
+        - REACT_APP_API_BASE_URL=http://localhost:3001/api/v1
+    container_name: cnm-frontend
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:3001/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"] 
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - appnet
+
+volumes:
+  mongo_data:
+
+networks:
+  appnet:
+    driver: bridge
